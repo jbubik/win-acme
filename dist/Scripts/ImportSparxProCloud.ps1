@@ -23,6 +23,8 @@ The output PEM file for Server Cert+PrivKey, usually C:\Program Files\Sparx Syst
 The output PEM file for CA Cert, usually C:\Program Files\Sparx Systems\Pro Cloud Server\Service\cacert.pem
 
 .NOTES
+Requires Powershell7 installed (invokes itself using interpreter pwsh.exe).
+PS7 is based on .Net Core and has this method: $cert.PrivateKey.ExportPkcs8PrivateKey()
 
 #>
 
@@ -39,6 +41,23 @@ param(
 	[string]
 	$CaFile
 )
+
+
+# Check current PowerShell version
+$psVersion = $PSVersionTable.PSVersion
+
+# Check if we are using PowerShell older than 7
+if ($psVersion.Major -lt 7) {
+    Write-Host "PowerShell <7 detected. Restarting with pwsh.exe..."
+
+    # Get the script path
+    $scriptPath = $MyInvocation.MyCommand.Path
+
+    # Execute the script using pwsh.exe (PowerShell Core), passing the 3 positional parameters
+    & "pwsh.exe" -File "$scriptPath" "$NewCertThumbprint" "$PemFile" "$CaFile"
+    exit
+}
+
 
 $cert = Get-ChildItem -Path Cert:\LocalMachine -Recurse | Where-Object { $_.HasPrivateKey } | Where-Object { $_.thumbprint -eq $NewCertThumbprint } | Sort-Object -Descending | Select-Object -f 1
 
@@ -69,28 +88,13 @@ $caCertPem = "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($caCert
 $caCertPem | Set-Content -Path $CaFile -Encoding Ascii
 Write-Host "CA Certificate saved to: $CaFile"
 
-# Extract the private key (PowerShell 5.1 compatible)
-$privateKey = $cert.PrivateKey
+# Export the private key to PKCS#8 format
+# We use the ExportPkcs8PrivateKey method from .NET Core (unavailable in old Powershell)
+$privateKeyBytes = $cert.PrivateKey.ExportPkcs8PrivateKey()
+$privateKeyPem = "-----BEGIN RSA PRIVATE KEY-----`n" + [Convert]::ToBase64String($privateKeyBytes, 'InsertLineBreaks') + "`n-----END RSA PRIVATE KEY-----"
 
-if ($privateKey -is [System.Security.Cryptography.RSACryptoServiceProvider]) {
-    Write-Host "Exporting private key from RSACryptoServiceProvider..."
-
-    # Export private key in PKCS#1 format
-    $privateKeyBytes = $privateKey.ExportCspBlob($true)
-    $privateKeyPem = "-----BEGIN RSA PRIVATE KEY-----`n" + [Convert]::ToBase64String($privateKeyBytes, 'InsertLineBreaks') + "`n-----END RSA PRIVATE KEY-----"
-} elseif ($privateKey -is [System.Security.Cryptography.RSACng]) {
-    Write-Host "Exporting private key from RSACng..."
-
-    # Export private key in PKCS#8 format
-    $privateKeyBytes = $privateKey.Key.ExportPkcs8PrivateKey()
-    $privateKeyPem = "-----BEGIN PRIVATE KEY-----`n" + [Convert]::ToBase64String($privateKeyBytes, 'InsertLineBreaks') + "`n-----END PRIVATE KEY-----"
-} else {
-    Write-Host "Unsupported private key type. Exiting..."
-    exit 1
-}
-
-# Write to PEM file
-$certPem + "`n" + $privateKeyPem | Set-Content -Path $PemFile -Encoding Ascii
+# Write to PEM file (both Cert and Key)
+$certPem + "`n`n" + $privateKeyPem | Set-Content -Path $PemFile -Encoding Ascii
 Write-Host "PEM file created successfully: $PemFile"
 
 # Restart service

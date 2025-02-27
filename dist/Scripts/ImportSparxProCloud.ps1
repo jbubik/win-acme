@@ -91,7 +91,7 @@ Write-Host "CA Certificate saved to: $CaFile"
 # Export the private key to PKCS#8 format
 # We use the ExportPkcs8PrivateKey method from .NET Core (unavailable in old Powershell)
 $privateKeyBytes = $cert.PrivateKey.ExportPkcs8PrivateKey()
-$privateKeyPem = "-----BEGIN RSA PRIVATE KEY-----`n" + [Convert]::ToBase64String($privateKeyBytes, 'InsertLineBreaks') + "`n-----END RSA PRIVATE KEY-----"
+$privateKeyPem = "-----BEGIN PRIVATE KEY-----`n" + [Convert]::ToBase64String($privateKeyBytes, 'InsertLineBreaks') + "`n-----END PRIVATE KEY-----"
 
 # Write to PEM file (both Cert and Key)
 $certPem + "`n`n" + $privateKeyPem | Set-Content -Path $PemFile -Encoding Ascii
